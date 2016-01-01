@@ -8,7 +8,6 @@ This script will disable that warning
 
 $vsversion = "14.0" # VS 2013 (optionally "12.0" VS2013, 11, 10, 9, etc.)
 
-$vsversion = "14.0"
 #remember to close any open vstudios
 #kill -name devenv # end any existing VS instances (required for persisting config change)
 Get-ItemProperty -Path "HKCU:\Software\Microsoft\VisualStudio\$vsversion\Debugger" -Name DisableAttachSecurityWarning -ErrorAction SilentlyContinue # query value (ignore if not exists)
