@@ -1,4 +1,11 @@
-<# .SYNOPSIS Setup a new environment with some common tools and installs #>
+<# 
+.DESCRIPTION
+Setup a new environment with some common tools and installs 
+.PARAMETER userName
+the username for a local admin account to create
+.PARAMETER password
+the password for the local admin account we will create
+#>
 
 param($userName, $password)
 
@@ -15,13 +22,12 @@ choco install sublimetext3 -y
 choco install sublimetext3.packagecontrol -y #package control manager for sublimetext3
 choco install greenshot -y
 choco install kdiff3 -y
-choco install launchy -y
 choco install msbuild.communitytasks -y
 choco install googledrive -y
 choco install rdcman -y
 choco install googlechrome -y
 
-<# now create a localadmin user #>
+# now create a localadmin user
 $computerName = $env:ComputerName
 $group = "Administrators"
 
