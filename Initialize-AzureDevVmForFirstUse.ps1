@@ -1,10 +1,10 @@
 <# 
 .DESCRIPTION
-Setup a new environment with some common tools and installs 
+Setup a new environment in an Azure vm with some common tools and installs using chocolatey
 .PARAMETER userName
-the username for a local admin account to create
+the username for a local admin account this script will create
 .PARAMETER password
-the password for the local admin account we will create
+the password for the local admin account this script will create
 #>
 
 param($userName, $password)
@@ -23,9 +23,6 @@ choco install sublimetext3.packagecontrol -y #package control manager for sublim
 choco install greenshot -y
 choco install kdiff3 -y
 choco install msbuild.communitytasks -y
-choco install googledrive -y
-choco install rdcman -y
-choco install googlechrome -y
 
 # now create a localadmin user
 $computerName = $env:ComputerName
@@ -47,4 +44,11 @@ $user.SetInfo()
 $objOU = [ADSI]"WinNT://$computerName/$group,group"
 
 $objOU.add("WinNT://$computerName/$userName")
+
+#now copy common files to local
+$localCommon = "C:\commons"
+if (-not(Test-Path -Path $localCommon)) {
+	New-Item -ItemType Directory -Path $localCommon -force
+}
+#todo - copy from a common location
 
