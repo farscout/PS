@@ -18,7 +18,7 @@ will be of the form:
     "DefaultLogFolderName":""
 #>
 
-$secretConfigFile = "C:\G\a\configs\default-sql-dp-ps-config"
+$secretConfigFile = "C:\G\a\configs\default-sql-dp-ps-config.json"
 if (-not (Test-Path -Path $secretConfigFile)) {
     Write-Error "Could not locate the default secret config file at $secretConfigFile. Stopping"
     exit 1
@@ -156,4 +156,172 @@ function Use-DpSqlScripts {
 
 }
 
+
+function Restore-DPDb {
+    <#
+    .DESCRIPTION
+    Restore a database
+
+    #>
+    [CmdletBinding(SupportsShouldProcess=$True)]
+    param([string] $dbName = $defaultSecretConfigs.SqlDefaultDatabaseName, 
+        [string] $workingFolder, 
+        [string] $dataLocation = $defaultSecretConfigs.SqlDefaultDataLocation, 
+        [string] $databaseFileName, 
+        [string] $logicalFileName, 
+        [string] $logicalLogName, 
+        [string] $sqlServer = $defaultSecretConfigs.SqlServerDefaultInstance, 
+        [string] $userName = $defaultSecretConfigs.SqlServerUserName, 
+        [string] $password = $defaultSecretConfigs.SqlServerUserPassword, 
+        [string] $scriptToRunAfter,
+        [string] $sqlCommandStringToRunAfter
+    )
+
+    if (-not ($workingFolder)) {
+        $workingFolder = Get-Location -PSProvider FileSystem
+    }
+
+    $queryTimeout = [int] 1200 #make it a large number as some restores can take time
+
+    $sqlTemplate = @"
+    USE [master]
+    go
+    if (db_id('PARAM_DB_NAME') is not null)
+    begin
+        ALTER DATABASE [PARAM_DB_NAME] SET SINGLE_USER WITH ROLLBACK IMMEDIATE
+    end
+    go
+    RESTORE DATABASE [PARAM_DB_NAME] FROM  DISK = N'PARAM_DB_PATH_AND_NAME.bak'
+    WITH  FILE = 1,
+    MOVE N'PARAM_LOGICAL_DB_NAME' TO 
+    N'PARAM_DATA_LOCATION\PARAM_DB_NAME.mdf',  
+    MOVE N'PARAM_LOGICAL_LOG_NAME' TO 
+    N'PARAM_DATA_LOCATION\PARAM_LOGICAL_DESTINATION_LOG_NAME.ldf',
+    NOUNLOAD, REPLACE, STATS=5
+    go
+    ALTER DATABASE [PARAM_DB_NAME] SET MULTI_USER
+    go
+"@
+   
+    $logicalLogNameDestination = $dbName + "_log"
+    
+    if (-not $logicalLogName) {
+        if ($logicalFileName) {
+            $logicalLogName = $logicalFileName + "_log"
+        }
+        else {
+            $logicalLogName = $dbName + "_log"
+        }
+    }
+
+    if (-not($logicalFileName)) {
+        $logicalFileName = $dbName
+    }
+
+    if ($databaseFileName) {
+        if (-not ($databaseFileName -match "\\")) {
+            #no full path - make it a full path
+            $databaseFileName = Join-Path -Path $workingFolder -ChildPath $databaseFileName
+        }
+        $databaseFileName = $databaseFileName -replace "\.bak$", "" #remove any .bak file append, as we will put it in explicitly in the sql template
+    }
+    else {
+        $databaseFileName = Join-Path -Path $workingFolder -ChildPath $dbName
+    }
+    
+    $sqlTemplate = $sqlTemplate -replace "PARAM_DB_NAME", $dbName
+    $sqlTemplate = $sqlTemplate -replace "PARAM_LOGICAL_DB_NAME", $logicalFileName
+    $sqlTemplate = $sqlTemplate -replace "PARAM_LOGICAL_LOG_NAME", $logicalLogName
+    $sqlTemplate = $sqlTemplate -replace "PARAM_LOGICAL_DESTINATION_LOG_NAME", $logicalLogNameDestination
+
+    $sqlTemplate = $sqlTemplate -replace "PARAM_DB_PATH_AND_NAME", $databaseFileName
+    $sqlTemplate = $sqlTemplate -replace "PARAM_DATA_LOCATION", $dataLocation
+
+    Write-Verbose "running the below constructed command to restore your database"
+    Write-Verbose $sqlTemplate 
+
+    if ($Whatif) {
+        Write-Output "Whatif: execute the statement to restore the database"
+    }
+    else {
+        $result = Invoke-Sqlcmd `
+            -ServerInstance $sqlServer `
+            -Username $userName `
+            -Password $password `
+            -Query $sqlTemplate `
+            -QueryTimeout $queryTimeout
+    }
+
+    Write-Verbose "Completed restoring $dbName"
+
+    $updateDbOwnerSqlTemplate = @"
+        USE [PARAM_DB_NAME]
+        GO
+        EXEC dbo.sp_changedbowner @loginame = N'PARAM_LOGIN_NAME', @map = false
+        GO
+"@
+    $updateDbOwnersql = $updateDbOwnerSqlTemplate -replace "PARAM_DB_NAME", $dbName
+    $updateDbOwnersql = $updateDbOwnersql -replace "PARAM_LOGIN_NAME", $userName
+    
+    Write-Verbose "updating the database owner to the userName $userName you passed in"
+    Write-Verbose "executing the following sql to update the database owner"
+    Write-Verbose $updateDbOwnersql
+
+    if ($Whatif) {
+        Write-Output "Whatif: execute the statement to update the database owner"
+    }
+    else {
+        $result = Invoke-Sqlcmd `
+            -ServerInstance $sqlServer `
+            -Username $userName `
+            -Password $password `
+            -Query $updateDbOwnersql `
+            -QueryTimeout $queryTimeout
+        Write-Verbose "Database owner updated to $userName"
+    }
+
+    if ($scriptToRunAfter) {
+        Write-Verbose "Running your post restore script $scriptToRunAfter"
+        #did user have a directory on the filename or was it just the filename
+        if (-not ($scriptToRunAfter -match "\\")) {
+            $scriptToRunAfter = Join-Path $workingFolder -ChildPath $scriptToRunAfter
+        }
+        if (-not(Test-Path -Path $scriptToRunAfter)) {
+            Write-Error "Could not locate your post restore script $scriptToRunAfter - check the filename you gave me"
+        }
+        else {
+            if ($Whatif) {
+                Write-Output "Whatif: execute the statement to run script after named $scriptToRunAfter"
+            }
+            else {
+                $result = Invoke-Sqlcmd `
+                    -ServerInstance $sqlServer `
+                    -Username $userName `
+                    -Password $password `
+                    -InputFile $scriptToRunAfter `
+                    -QueryTimeout $queryTimeout
+            }
+        }
+    }
+
+    if ($sqlCommandStringToRunAfter) {
+        if ($Whatif) {
+            Write-Output "Executing your sql command after restoring the database: "
+            Write-Output $sqlCommandStringToRunAfter
+        }
+        else {
+            $result = Invoke-Sqlcmd `
+                -ServerInstance $sqlServer `
+                -Username $userName `
+                -Password $password `
+                -Query $sqlCommandStringToRunAfter `
+                -QueryTimeout $queryTimeout
+            Write-Verbose "Executed your sql command after restoring the database: "
+            Write-Verbose $sqlCommandStringToRunAfter
+        }
+    }
+
+    Write-Output "Restore-DPDb Complete"
+
+}
 
