@@ -1,26 +1,26 @@
 <#
 .DESCRIPTION
-A library of Azure support calls with common specific values
+A library of Azure Service Bus support calls with common specific values
 #>
-
 
 #some common constants
 $defaultAzureRegion = "Australia East" #you could also try West Europe, East Asia
 
 
-function Ensure-ServiceBusDll {
+function Ensure-DPServiceBusDll {
     <#
     .DESCRIPTION
     Load the Azure dll to give us more granular Azure operations than just the issue Azure Powershells
     #>
     $dll = "Microsoft.ServiceBus.dll"
+    $dllLocationSubFolder = "ServiceBusDll"
     #msdn docs on the servicebus namespace
     #https://msdn.microsoft.com/library/azure/microsoft.servicebus.aspx?f=255&MSPPError=-2147217396
     try
     {
         Write-Output "Adding the $dll assembly to the script..."
         
-        $packagesFolder = Join-Path $PSScriptRoot "dll"
+        $packagesFolder = Join-Path $PSScriptRoot $dllLocationSubFolder
         $assembly = Get-ChildItem $packagesFolder -Include $dll -Recurse
         Add-Type -Path $assembly.FullName
 
@@ -35,17 +35,18 @@ function Ensure-ServiceBusDll {
 }
 
 
-function Get-ServiceBusConnectionString {
+function Get-DPServiceBusConnectionString {
     <#
     .DESCRIPTION
     Just return the connectionstring for use in subscriptions and creating clients
     #>
+    [CmdletBinding()]
     param($serviceBusNamespace)
     $ns = Get-AzureSBNamespace -Name $serviceBusNamespace
     $ns.ConnectionString
 }
 
-function Create-DpeServiceBusSASKey {
+function Create-DPServiceBusSASKey {
     <#
     .DESCRIPTION
     Create or get an SAS key against the service bus and return its key for use with clients
@@ -70,18 +71,28 @@ function Create-DpeServiceBusSASKey {
     #>
     [CmdletBinding()]
     param($serviceBusNamespace, $ruleName, $permission=$("Manage", "Listen", "Send"))
+
+    #if it already exists, we just return it
+    $ruleDetails = Get-AzureSBAuthorizationRule -Namespace $serviceBusNamespace | ? { $_.Name -eq $ruleName}
+    if ($ruleDetails) {
+        Write-Verbose "$ruleName already exists - just returning the existing connectionstring"
+        $ruleDetails.ConnectionString
+        return
+    }
+
     $ruleDetails = New-AzureSBAuthorizationRule -Name $ruleName -Namespace $serviceBusNamespace -Permission $permission 
+    
     $ruleDetails.ConnectionString
 }
 
-function Select-DpeServiceBus {
+function Select-DPServiceBus {
 	<#
     .DESCRIPTION
     Create the service bus. Default is to create in Australia East region. Some other regions are: West Europe, East Asia
     .PARAMETER force
     should the service bus be created if it does not already exist
     #>
-
+    [CmdletBinding()]
     param($location = $defaultAzureRegion, $serviceBusNamespace, [switch] $force)
 	$ns = Get-AzureSBNamespace -Name $serviceBusNamespace
 
@@ -95,23 +106,24 @@ function Select-DpeServiceBus {
 		Write-Output "Creating the [$serviceBusNamespace] namespace in the [$Location] region..."
 	    New-AzureSBNamespace -Name $serviceBusNamespace -Location $Location -CreateACSNamespace $false -NamespaceType Messaging
 	    $ns = Get-AzureSBNamespace -Name $serviceBusNamespace
-	    Write-Output "The [$serviceBusNamespace] namespace in the [$Location] region has been successfully created."
+	    Write-Verbose "The [$serviceBusNamespace] namespace in the [$Location] region has been successfully created."
 	}
 
 	$ns
 }
 
-function Create-DpeSbTopic {
+function Create-DPSbTopic {
+    [CmdletBinding()]
 	param($serviceBusNamespace, $topicName, $defaultMessageTimeToLiveMinutes = 10, [switch] $forceRecreate)
 
-    $t = Ensure-ServiceBusDll
+    $t = Ensure-DPServiceBusDll
     if (-not $t) {
-        Write-Error 'Could not ensure the service bus dll was loaded. Stopping'
+        Write-Error "Could not ensure the service bus dll was loaded. Stopping"
         return
     }
 
 
-    $ns = Select-DpeServiceBus -serviceBusNamespace $serviceBusNamespace -force
+    $ns = Select-DPServiceBus -serviceBusNamespace $serviceBusNamespace -force
     if (-not $ns) {
         Write-Error "Could not select the Service Bus $serviceBusNamespace. Stopping."
         return
@@ -123,9 +135,9 @@ function Create-DpeSbTopic {
         Write-Output "The $topicName topic already exists in the $serviceBusNamespace namespace." 
         if ($forceRecreate) {
             #flush the existing and go on
-            Write-Output "Flushing existing as you said forceRecreate"
+            Write-Verbose "Flushing existing as you said forceRecreate"
             $nsManager.DeleteTopic($topicName)
-            Write-Output "Deleted existing Topic $topicName"
+            Write-Verbose "Deleted existing Topic $topicName"
         }
         else {
             return
@@ -139,26 +151,26 @@ function Create-DpeSbTopic {
     }
   
     $nsManager.CreateTopic($topicDescription);
-    Write-Output "Created $topicName Topic in the $serviceBusNamespace namespace"
+    Write-Verbose "Created $topicName Topic in the $serviceBusNamespace namespace"
 }
 
-function Create-DpeSbSubscription {
+function Create-DPSbSubscription {
     param($serviceBusNamespace, $topicName, $subscriptionName, $messageTimeToLiveMinutes)
 
-    $t = Ensure-ServiceBusDll
+    $t = Ensure-DPServiceBusDll
     if (-not $t) {
         Write-Error "Could not ensure the service bus dll was loaded. Stopping"
         return
     }
 
-    $ns = Select-DpeServiceBus -serviceBusNamespace $serviceBusNamespace -force
+    $ns = Select-DPServiceBus -serviceBusNamespace $serviceBusNamespace -force
     if (-not $ns) {
         Write-Error "Could not select the Service Bus $serviceBusNamespace. Stopping."
         return
     }
     $nsManager = [Microsoft.ServiceBus.NamespaceManager]::CreateFromConnectionString($ns.ConnectionString);
     if ($nsManager.SubscriptionExists($topicName, $subscriptionName)) {
-        Write-Output "Subscription $subscriptionName already exists on Topic $topicName."
+        Write-Verbose "Subscription $subscriptionName already exists on Topic $topicName."
         return
     }
 
@@ -170,14 +182,14 @@ function Create-DpeSbSubscription {
     }
     $nsManager.CreateSubscription($subDescription)
 
-    Write-Output "Subscription $subscriptionName created on Topic $topicName"
+    Write-Verbose "Subscription $subscriptionName created on Topic $topicName"
 }
 
 
-function DpeTestit {
+function DPTestit {
     #just a quick test so you do not have to type the whole command
-    Create-DpeSbTopic -serviceBusNamespace 'realtime-preprod' -topicName 'tester1' -defaultMessageTimeToLiveMinutes 10
+    Create-DPSbTopic -serviceBusNamespace 'realtime-preprod' -topicName 'tester1' -defaultMessageTimeToLiveMinutes 10
     #create a subscription on that topic
-    Create-DpeSbSubscription -serviceBusNamespace 'realtime-preprod' -topicName 'tester1' `
+    Create-DPSbSubscription -serviceBusNamespace 'realtime-preprod' -topicName 'tester1' `
         -subscriptionName 'TestSub1' -messageTimeToLiveMinutes 10
 }
