@@ -20,8 +20,17 @@ function Ensure-DPServiceBusDll {
     {
         Write-Output "Adding the $dll assembly to the script..."
         
-        $packagesFolder = Join-Path $PSScriptRoot $dllLocationSubFolder
+        $packagesFolder = Join-Path -Path $PSScriptRoot -ChildPath $dllLocationSubFolder
+        if (-not (Test-Path -Path $packagesFolder)) {
+            Write-Error "Ensure-DPServiceBusDll: Could not locate packages folder: $packagesFolder"
+            exit(1)
+        }
+
         $assembly = Get-ChildItem $packagesFolder -Include $dll -Recurse
+        if (-not($assembly)) {
+            Write-Error "Could not locate $dll at $packagesFolder"
+            exit(1)
+        }
         Add-Type -Path $assembly.FullName
 
         Write-Output "The $dll assembly has been successfully added to the script."
@@ -30,7 +39,9 @@ function Ensure-DPServiceBusDll {
     catch [System.Exception]
     {
         Write-Error "Could not add the $dll assembly to the script."
+        Write-Error "Exception message: $_.Exception.Message"
         $False
+        exit (1)
     }
 }
 
