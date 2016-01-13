@@ -36,7 +36,7 @@ function Show-DPSecretConfig {
     $defaultSecretConfigs
 }
 
-return
+
 
 function Set-DpUserEnsureLogin {
     <# 
@@ -182,7 +182,7 @@ function Restore-DPDb {
         $workingFolder = Get-Location -PSProvider FileSystem
     }
 
-    $queryTimeout = [int] 1200 #make it a large number as some restores can take time
+    $queryTimeout = [int] 2000 #make it a large number as some restores can take time
 
     $sqlTemplate = @"
     USE [master]

@@ -14,6 +14,7 @@ function gos {
     Go to the scripts folder 
     #>
     Set-Location "C:\G\a\PSScripts"
+    pwd
 }
 
 function goc {
@@ -21,10 +22,12 @@ function goc {
     Go to the c root drive 
     #>
     Set-Location "C:\"
+    pwd
 }
 
-function gops {
-    set-location "c:\G\a\PS"
+function godb {
+    Set-Location "c:\db\files"
+    pwd
 }
 
 "profile script complete"
