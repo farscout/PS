@@ -6,7 +6,7 @@ the username for a local admin account this script will create
 .PARAMETER password
 the password for the local admin account this script will create
 #>
-
+[CmdletBinding()]
 param($userName, $password)
 
 #this will install chocolatey

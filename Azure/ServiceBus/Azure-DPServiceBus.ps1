@@ -199,8 +199,8 @@ function Create-DPSbSubscription {
 
 function DPTestit {
     #just a quick test so you do not have to type the whole command
-    Create-DPSbTopic -serviceBusNamespace 'realtime-preprod' -topicName 'tester1' -defaultMessageTimeToLiveMinutes 10
+    Create-DPSbTopic -serviceBusNamespace 'realtime-preprod' -topicName 'tester1' -defaultMessageTimeToLiveMinutes 60
     #create a subscription on that topic
     Create-DPSbSubscription -serviceBusNamespace 'realtime-preprod' -topicName 'tester1' `
-        -subscriptionName 'TestSub1' -messageTimeToLiveMinutes 10
+        -subscriptionName 'TestSub1' -messageTimeToLiveMinutes 60
 }
