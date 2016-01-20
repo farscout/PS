@@ -1,5 +1,5 @@
 <#
-.DESCRIPTION
+.SYNOPSIS
 Common SQL actions lib to help me in my work
 DP.
 
@@ -40,7 +40,7 @@ function Show-DPSecretConfig {
 
 function Set-DpUserEnsureLogin {
     <# 
-    .DESCRIPTION 
+    .SYNOPSIS 
     Ensure the database login exists on the designated sql server.
     This is preperatory to restoring a database which requires the user to already exist 
     #>
@@ -103,22 +103,19 @@ GO
 function Use-DPSqlScripts {
 
     <#
-    .DESCRIPTION
-    Run all the sql scripts in the passed in folder, sorted by their filenames
-
-    .EXAMPLE
-    Use-SqlScripts -folderName 'c:\updatescripts'
-    
     .SYNOPSIS
+    Run all the sql scripts in the passed in folder, sorted by their filenames.
     Defaults will be read from the defaults file.
     If you want to scripts to exec against another db other than the default, then
     pass it in explicitly or have use [dbname] at the top of the scripts
-    You can use the -Whatif true param to specify the script should not execute, but should only 
+    You can use the -Whatif switch to specify the script should not execute, but should only 
     show the list of scripts it will execute against.
+
+    .EXAMPLE
+    Use-SqlScripts -folderName 'c:\updatescripts'
 
     .PARAMETER folderName
     if not passed in, will search the current folder for scripts to run
-
     #>
     [CmdletBinding(SupportsShouldProcess=$True)]
     param([string] $folderName, 
@@ -135,14 +132,13 @@ function Use-DPSqlScripts {
 
     if (-not (Test-Path -Path $folderName)) {
         Write-Error "Could not find folder to work within"
-        exit 1
+        return $False
     }
     
     $sqlScripts = Get-ChildItem -Path $folderName -File -Filter "*.sql" | sort -Property "Name"
     
     foreach ($s in $sqlScripts) {
-
-        if ($pscmdlet.ShouldProcess("Invoke-Sqlcmd", "$s")) {
+        if ($pscmdlet.ShouldProcess("$s", "Invoke-Sqlcmd")) {
             $result = Invoke-Sqlcmd `
                 -ServerInstance $sqlServer `
                 -Database $databaseName `
@@ -153,15 +149,13 @@ function Use-DPSqlScripts {
             Write-Verbose $s.Name
         }
     }
-
 }
 
 
 function Restore-DPDb {
     <#
-    .DESCRIPTION
+    .SYNOPSIS
     Restore a database
-
     #>
     [CmdletBinding(SupportsShouldProcess=$True)]
     param([string] $dbName = $defaultSecretConfigs.SqlDefaultDatabaseName, 
@@ -241,10 +235,7 @@ function Restore-DPDb {
     Write-Verbose "running the below constructed command to restore your database"
     Write-Verbose $sqlTemplate 
 
-    if ($Whatif) {
-        Write-Output "Whatif: execute the statement to restore the database"
-    }
-    else {
+    if ($PSCmdlet.ShouldProcess($sqlTemplate, "Invoke-Sqlcmd")) {
         $result = Invoke-Sqlcmd `
             -ServerInstance $sqlServer `
             -Username $userName `
@@ -268,18 +259,16 @@ function Restore-DPDb {
     Write-Verbose "executing the following sql to update the database owner"
     Write-Verbose $updateDbOwnersql
 
-    if ($Whatif) {
-        Write-Output "Whatif: execute the statement to update the database owner"
-    }
-    else {
+    if ($PSCmdLet.ShouldProcess($updateDbOwnersql, "Invoke-Sqlcmd")) {
         $result = Invoke-Sqlcmd `
             -ServerInstance $sqlServer `
             -Username $userName `
             -Password $password `
             -Query $updateDbOwnersql `
             -QueryTimeout $queryTimeout
-        Write-Verbose "Database owner updated to $userName"
+        
     }
+    Write-Verbose "Database owner updated to $userName"
 
     if ($scriptToRunAfter) {
         Write-Verbose "Running your post restore script $scriptToRunAfter"
@@ -291,10 +280,7 @@ function Restore-DPDb {
             Write-Error "Could not locate your post restore script $scriptToRunAfter - check the filename you gave me"
         }
         else {
-            if ($Whatif) {
-                Write-Output "Whatif: execute the statement to run script after named $scriptToRunAfter"
-            }
-            else {
+            if ($PSCmdLet.ShouldProcess($scriptToRunAfter, "Invoke-Sqlcmd")) {
                 $result = Invoke-Sqlcmd `
                     -ServerInstance $sqlServer `
                     -Username $userName `
@@ -306,20 +292,17 @@ function Restore-DPDb {
     }
 
     if ($sqlCommandStringToRunAfter) {
-        if ($Whatif) {
-            Write-Output "Executing your sql command after restoring the database: "
-            Write-Output $sqlCommandStringToRunAfter
-        }
-        else {
+        if ($PSCmdLet.ShouldProcess($sqlCommandStringToRunAfter, "Invoke-Sqlcmd")) {
             $result = Invoke-Sqlcmd `
                 -ServerInstance $sqlServer `
                 -Username $userName `
                 -Password $password `
                 -Query $sqlCommandStringToRunAfter `
                 -QueryTimeout $queryTimeout
-            Write-Verbose "Executed your sql command after restoring the database: "
-            Write-Verbose $sqlCommandStringToRunAfter
+            
         }
+        Write-Verbose "Executed your sql command after restoring the database: "
+        Write-Verbose $sqlCommandStringToRunAfter
     }
 
     if( $runAllScriptsThisFolder) {
@@ -328,18 +311,18 @@ function Restore-DPDb {
         }
         else {
             Use-DpSqlScripts -folderName $runAllScriptsThisFolder `
-                -sqlServer $sqlServer -userName $userName -password $password `
-                -databaseName $dbName -Verbose:$Verbose -Whatif:$Whatif
+                -sqlServer $sqlServer `
+                -userName $userName -password $password `
+                -databaseName $dbName
         }
     }
 
     Write-Output "Restore-DPDb Complete"
-
 }
 
 function Create-DPBlankLoggingDatabase {
     <#
-    .DESCRIPTION
+    
     Create a blank logging database ready for use by Enterprise Library
     #>
     [CmdletBinding()]
@@ -707,28 +690,28 @@ function Create-DPBlankLoggingDatabase {
         -Query $sql `
         -QueryTimeout $queryTimeout
 
-    Write-Output "Create-BlankLoggingDatabase Complete"
+    Write-Output "Create-DPBlankLoggingDatabase Complete"
 }
 
 
 function Restore-DpMostRecentDbBackup {
     <#
-    .DESCRIPTION
+    .SYNOPSIS
     Use the file filter to find the most recent backup database (.bak) file and restore it
     #>
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess=$True)]
     param(
-        [string] $dbName = $defaultSecretConfigs.SqlDefaultDatabaseName, `
-        [string] $workingFolder, `
-        [string] $logFolderName = "logs", `
-        [string] $sqlServer =  $defaultSecretConfigs.SqlServerDefaultInstance, `
-        [string] $username =  $defaultSecretConfigs.SqlServerUserName, `
-        [string] $password =  $defaultSecretConfigs.SqlServerUserPassword, `
-        [string] $dataLocation =  $defaultSecretConfigs.SqlDefaultDataLocation, `
-        [string] $postUpdateScriptsFolder, `
-        [string] $postUpdateOptimiseDatabaseScriptsFolder, `
-        [switch] $shrinkOnRestore = $False, `
-        [string] $logicalFileName = $defaultSecretConfigs.SqlDefaultDatabaseName, `
+        [string] $dbName = $defaultSecretConfigs.SqlDefaultDatabaseName, 
+        [string] $workingFolder, 
+        [string] $logFolderName = "logs", 
+        [string] $sqlServer = $defaultSecretConfigs.SqlServerDefaultInstance, 
+        [string] $username = $defaultSecretConfigs.SqlServerUserName, 
+        [string] $password = $defaultSecretConfigs.SqlServerUserPassword, 
+        [string] $dataLocation = $defaultSecretConfigs.SqlDefaultDataLocation, 
+        [string] $postUpdateScriptsFolder, 
+        [string] $postUpdateOptimiseDatabaseScriptsFolder, 
+        [switch] $shrinkOnRestore = $False, 
+        [string] $logicalFileName = $defaultSecretConfigs.SqlDefaultDatabaseName, 
         [string] $logicalLogName = ($defaultSecretConfigs.SqlDefaultDatabaseName + "_log")
     )
 
@@ -737,7 +720,6 @@ function Restore-DpMostRecentDbBackup {
     }
 
     $queryTimeout = [int] 1200 #make it a large number as some restores can take time
-
 
     $fileFilter = "*$dbName*.bak"
     $mostRecentBak = Get-ChildItem -Path $workingFolder -File -Filter $fileFilter | `
@@ -749,15 +731,14 @@ function Restore-DpMostRecentDbBackup {
         return
     }
     Write-Verbose "Found backup file $mostRecentBakFullPath"
-
-
-    Restore-DPDb -dbName $dbName -workingFolder $workingFolder `
-        -databaseFileName $mostRecentBakFullPath `
-        -sqlServer $sqlServer -userName $username -password $password `
-        -dataLocation $dataLocation `
-        -logicalFileName $logicalFileName `
-        -logicalLogName $logicalLogName `
-        -Verbose:$Verbose
+    if ($PSCmdlet.ShouldProcess("$mostRecentBakFullPath as $dbName", "Restore-DPDb")) {
+        Restore-DPDb -dbName $dbName -workingFolder $workingFolder `
+            -databaseFileName $mostRecentBakFullPath `
+            -sqlServer $sqlServer -userName $username -password $password `
+            -dataLocation $dataLocation `
+            -logicalFileName $logicalFileName `
+            -logicalLogName $logicalLogName
+    }
 
     Write-Output "Restore-DpMostRecentDbBackup Complete"
 }
