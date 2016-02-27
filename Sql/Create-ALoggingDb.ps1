@@ -16,8 +16,6 @@ the location to create the mdf and ldf files
 
 .EXAMPLE 
 .\Create-ALoggingDb.ps1 -loggingDbName "MyLogDb_Log" -sqlServer "." -userName "sa" -password "secretSoThere" -dataFileLocation "D:\SQL-DB"
-.LINK 
-mailto:david.payne@dominos.com.au
 
 #>
 [CmdletBinding()]
