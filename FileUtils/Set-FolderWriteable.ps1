@@ -6,6 +6,7 @@ tfs and modifying during a build without read-only causing build errors
 .PARAMETER folder
 path to recurse into and below making all files writeable
 #>
+[CmdletBinding()]
 param($folder)
 
 gci -Path $folder -Recurse -attributes readonly | % { $_.IsReadonly = $false }
