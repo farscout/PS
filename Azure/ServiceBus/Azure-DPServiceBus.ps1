@@ -21,16 +21,16 @@ function Ensure-DPServiceBusDll {
         Write-Output "Adding the $dll assembly to the script..."
         
         $packagesFolder = Join-Path -Path $PSScriptRoot -ChildPath $dllLocationSubFolder
-        if (-not (Test-Path -Path $packagesFolder)) {
-            Write-Error "Ensure-DPServiceBusDll: Could not locate packages folder: $packagesFolder"
-            exit(1)
-        }
+		if (-not (Test-Path -Path $packagesFolder)) {
+			Write-Error "Ensure-DPServiceBusDll: Could not locate packages folder: $packagesFolder"
+			exit(1)
+		}
 
         $assembly = Get-ChildItem $packagesFolder -Include $dll -Recurse
-        if (-not($assembly)) {
-            Write-Error "Could not locate $dll at $packagesFolder"
-            exit(1)
-        }
+		if (-not($assembly)) {
+			Write-Error "Could not locate $dll at $packagesFolder"
+			exit(1)
+		}
         Add-Type -Path $assembly.FullName
 
         Write-Output "The $dll assembly has been successfully added to the script."
@@ -39,9 +39,9 @@ function Ensure-DPServiceBusDll {
     catch [System.Exception]
     {
         Write-Error "Could not add the $dll assembly to the script."
-        Write-Error "Exception message: $_.Exception.Message"
+		Write-Error "Exception message: $_.Exception.Message"
         $False
-        exit (1)
+		exit (1)
     }
 }
 
@@ -166,12 +166,16 @@ function Create-DPSbTopic {
 }
 
 function Create-DPSbSubscription {
-    param($serviceBusNamespace, $topicName, $subscriptionName, $messageTimeToLiveMinutes)
+    param($serviceBusNamespace, 
+		$topicName, 
+		$subscriptionName, 
+		$messageTimeToLiveMinutes,
+		$sqlFilter)
 
     $t = Ensure-DPServiceBusDll
     if (-not $t) {
         Write-Error "Could not ensure the service bus dll was loaded. Stopping"
-        return
+        exit (1)
     }
 
     $ns = Select-DPServiceBus -serviceBusNamespace $serviceBusNamespace -force
@@ -179,19 +183,37 @@ function Create-DPSbSubscription {
         Write-Error "Could not select the Service Bus $serviceBusNamespace. Stopping."
         return
     }
+
     $nsManager = [Microsoft.ServiceBus.NamespaceManager]::CreateFromConnectionString($ns.ConnectionString);
+
     if ($nsManager.SubscriptionExists($topicName, $subscriptionName)) {
         Write-Verbose "Subscription $subscriptionName already exists on Topic $topicName."
         return
     }
 
-    $subDescription = (New-Object -TypeName Microsoft.ServiceBus.Messaging.SubscriptionDescription -ArgumentList $topicName, $subscriptionName)
+	if ($filter) {
+		$filter = (New-Object -TypeName Microsoft.ServiceBus.Messaging.SqlFilter -ArgumentList $sqlFilter)
 
-    #$nsManager.CreateSubscription($topicName, $subscriptionName)
-    if ($messageTimeToLiveMinutes) {
-        $subDescription.DefaultMessageTimeToLive = [System.TimeSpan]::FromMinutes($messageTimeToLiveMinutes)
-    }
-    $nsManager.CreateSubscription($subDescription)
+		$ruleDescription = (New-Object -TypeName Microsoft.ServiceBus.Messaging.RuleDescription -ArgumentList $filter)
+
+		$subDescription = $nsManager.CreateSubscription($topicName, $subscriptionName, $ruleDescription)
+
+		if ($messageTimeToLiveMinutes) {
+			$subDescription.DefaultMessageTimeToLive = [System.TimeSpan]::FromMinutes($messageTimeToLiveMinutes)
+		}
+	}
+	else {
+		$subDescription = (New-Object -TypeName Microsoft.ServiceBus.Messaging.SubscriptionDescription -ArgumentList $topicName, $subscriptionName)
+
+		if ($messageTimeToLiveMinutes) {
+			$subDescription.DefaultMessageTimeToLive = [System.TimeSpan]::FromMinutes($messageTimeToLiveMinutes)
+		}
+
+		$nsManager.CreateSubscription($subDescription)
+	}
+
+
+    #$nsManager.CreateSubscription($topicName, $subscriptionName) #for creating a simple subscription
 
     Write-Verbose "Subscription $subscriptionName created on Topic $topicName"
 }
@@ -199,8 +221,8 @@ function Create-DPSbSubscription {
 
 function DPTestit {
     #just a quick test so you do not have to type the whole command
-    Create-DPSbTopic -serviceBusNamespace 'realtime-preprod' -topicName 'tester1' -defaultMessageTimeToLiveMinutes 60
+    Create-DPSbTopic -serviceBusNamespace 'realtime-preprod' -topicName 'tester1' -defaultMessageTimeToLiveMinutes 10
     #create a subscription on that topic
     Create-DPSbSubscription -serviceBusNamespace 'realtime-preprod' -topicName 'tester1' `
-        -subscriptionName 'TestSub1' -messageTimeToLiveMinutes 60
+        -subscriptionName 'TestSub1' -messageTimeToLiveMinutes 10
 }
