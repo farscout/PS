@@ -166,11 +166,14 @@ function Create-DPSbTopic {
 }
 
 function Create-DPSbSubscription {
+	[CmdletBinding()]
     param($serviceBusNamespace, 
 		$topicName, 
 		$subscriptionName, 
 		$messageTimeToLiveMinutes,
-		$sqlFilter)
+		$sqlFilter,
+		[switch] $force
+	)
 
     $t = Ensure-DPServiceBusDll
     if (-not $t) {
@@ -188,7 +191,12 @@ function Create-DPSbSubscription {
 
     if ($nsManager.SubscriptionExists($topicName, $subscriptionName)) {
         Write-Verbose "Subscription $subscriptionName already exists on Topic $topicName."
-        return
+		if (-not ($force)) {
+			return
+		}
+        Write-Verbose "but you said to force it, so I will remove the existing and re-create it"
+		$nsManager.DeleteSubscription($topicName, $subscriptionName)
+		Write-Verbose "existing subscription deleted."
     }
 
 	if ($sqlFilter) {
