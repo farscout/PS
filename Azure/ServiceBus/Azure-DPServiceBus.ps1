@@ -191,10 +191,11 @@ function Create-DPSbSubscription {
         return
     }
 
-	if ($filter) {
-		$filter = (New-Object -TypeName Microsoft.ServiceBus.Messaging.SqlFilter -ArgumentList $sqlFilter)
+	if ($sqlFilter) {
+		Write-Verbose "creating a filter for the subscription as: $sqlFilter"
+		$filterObject = (New-Object -TypeName Microsoft.ServiceBus.Messaging.SqlFilter -ArgumentList $sqlFilter)
 
-		$ruleDescription = (New-Object -TypeName Microsoft.ServiceBus.Messaging.RuleDescription -ArgumentList $filter)
+		$ruleDescription = (New-Object -TypeName Microsoft.ServiceBus.Messaging.RuleDescription -ArgumentList $filterObject)
 
 		$subDescription = $nsManager.CreateSubscription($topicName, $subscriptionName, $ruleDescription)
 
