@@ -1,6 +1,9 @@
 <#
 .SYNOPSIS
 Provides utility functions for working with Azure databases
+
+.NOTES
+see david.payne@dominos.com.au with any queries
 #>
 
 <# A json file to provide secret creds and settings not co-located with the
@@ -20,24 +23,57 @@ $defaultConfig = Get-Content -Path $defaultSecretConfigFile | ConvertFrom-Json
 
 function Create-DPAzureSqlDatabase {
     [CmdLetBinding()]
+    <#
+    .DESCRIPTION
+    Create a new Azure SQL database
+
+    .PARAMETER ServiceObjectiveName
+    can be Basic, S0, S1, S2, S3, P1, P2, P3
+
+    #>
     param($databaseName, 
+        $ServiceObjectiveName = "S0", 
         $azureLocation = $defaultConfig.AzureLocation, 
         $azureSqlAdminLoginName = $defaultConfig.AzureSqlServerAdminLogin,
-        $azureSqlAdminPassword = $defaultConfig.AzureSqlServerAdminPassword)
+        $azureSqlAdminPassword = $defaultConfig.AzureSqlServerAdminPassword,
+        [switch] $createDefaultInternalFirewallRules
+    )
 
     $foundDb = Get-AzureSqlDatabaseServer | Select ServerName | `
         % { Get-AzureSqlDatabase -ServerName $_.ServerName  | ? { $_.Name -eq $databaseName }}
+
     if (-not $foundDb) {
-        $newSqlServer = New-AzureSqlDatabaseServer -AdministratorLogin $azureSqlAdminLoginName `
-            -AdministratorLoginPassword $azureSqlAdminPassword -Force -Location $azureLocation
+        $newSqlServer = New-AzureSqlDatabaseServer `
+            -AdministratorLogin $azureSqlAdminLoginName `
+            -AdministratorLoginPassword $azureSqlAdminPassword `
+            -Location $azureLocation `
+            -Force 
+
         Write-Verbose ("created new sql database server " + $newSqlServer.ServerName)
+
+        #get service objective for the server
+        $serviceObjective = Get-AzureSqlDatabaseServiceObjective -ServerName $newSqlServer.ServerName `
+            -ServiceObjectiveName $ServiceObjectiveName
 
         #https://msdn.microsoft.com/en-us/library/dn546722.aspx
         $foundDb = New-AzureSqlDatabase -ServerName $newSqlServer.ServerName `
-            -DatabaseName $databaseName -Force
-        Write-Verbose "new sql database $databaseName created"
+            -DatabaseName $databaseName `
+            -ServiceObjective $serviceObjective `
+            -Force
 
-        Set-DPAzureFirewallRuleDefaultsByDbName -databaseName $databaseName
+        Write-Verbose ("new sql database $databaseName created on sql server " + $newSqlServer.ServerName)
+        if ($createDefaultInternalFirewallRules) {
+            Write-Verbose "creating default firewall rules"
+            Set-DPAzureFirewallRuleDefaultsByDbName -databaseName $databaseName
+        }
+    }
+    else {
+        #check if already existing db matches requires params
+        if ($foundDb.ServiceObjectiveName -ne $ServiceObjective) {
+            Write-Output ("Warning: The database $databaseName already exists, but its ServiceObjective " + `
+                $foundDb.ServiceObjectiveName + " does not match what you required as the ServiceObjective " + `
+                $ServiceObjective)
+        }
     }
 
     if (-not $foundDb) {
@@ -45,6 +81,7 @@ function Create-DPAzureSqlDatabase {
         return
     }
     Write-Verbose ("Database " + $foundDb.Name  + " ready")
+    $foundDb
 }
 
 function Invoke-DPSqlAzure {
@@ -115,22 +152,19 @@ function Get-AzureSqlServerByDbName {
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory=$True,Position=0)] $databaseName)
-    $serverName = ""
     $sqlServers = Get-AzureSqlDatabaseServer | select ServerName
     foreach ($srv in $sqlServers.ServerName) {
         Write-Verbose "Checking server $srv for database $databaseName"
         if (Get-AzureSqlDatabase -ServerName $srv | ? { $_.Name -eq $databaseName }) {
-            $serverName = $srv
+            $srv
         }
     }
-    $serverName
 }
 
 function Get-MyExternalIp {
     [CmdLetBinding()]
     param()
-    $myExternalIpRequest = Invoke-WebRequest ifconfig.me/ip
-    $ip = $myExternalIpRequest.Content.Trim()
+    $ip = ((curl https://ifconfig.co/json).Content.Trim() | ConvertFrom-Json | select ip).ip
     Write-Verbose "Got your external IP of $ip"
     $ip
 }
@@ -167,7 +201,7 @@ function Set-DPAzureDbFirewallRuleByDbName {
     [CmdletBinding()]
     param([Parameter(Mandatory=$True,Position=0)] $databaseName, 
         [Parameter(Position=1)] $ip, 
-        $firewallRuleName = "DominosInternal")
+        $firewallRuleName = "InternalFWRule")
     if (-not $ip) {
         $ip = Get-MyExternalIp
         Write-Verbose "ip param not passed in, using your external IP of $ip"
